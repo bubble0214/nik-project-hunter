@@ -1,0 +1,126 @@
+    async def send_report(self, title: str, summary: str, projects: list) -> bool:
+        """推送日报/报告到企业微信群（分批推送避免超限）"""
+        if not settings.WECHAT_WEBHOOK_URL:
+            logger.debug("[Notifier] WECHAT_WEBHOOK_URL 未配置，跳过报告")
+            return False
+
+        if not projects:
+            logger.debug("[Notifier] 无项目，跳过报告")
+            return False
+
+        # 分批推送：每批 3 条，避免超过 4096 字节限制
+        batch_size = 3
+        total_projects = len(projects)
+        total_batches = (total_projects + batch_size - 1) // batch_size
+
+        all_success = True
+
+        for batch_idx in range(total_batches):
+            start = batch_idx * batch_size
+            end = start + batch_size
+            batch_projects = projects[start:end]
+            is_last = (batch_idx == total_batches - 1)
+
+            # 构建消息内容
+            lines = [f"## 【🔥 每日商机汇报】({batch_idx+1}/{total_batches})", ""]
+
+            for idx, p in enumerate(batch_projects, 1):
+                budget_str = self._format_budget(p.budget)
+                date_str = (
+                    p.publish_date.strftime("%Y-%m-%d")
+                    if p.publish_date
+                    else "未知"
+                )
+                notice_type = getattr(p, "notice_type", None) or "未知"
+                # 标书获取截止时间
+                doc_deadline_str = ""
+                if getattr(p, "deadline", None):
+                    doc_deadline_str = p.deadline.strftime("%Y-%m-%d %H:%M")
+                elif notice_type in ("意向采购", "供应商征集"):
+                    doc_deadline_str = "待正式招标"
+                else:
+                    doc_deadline_str = "未知"
+                # 投标截止时间
+                bid_deadline_str = ""
+                bid_dl = getattr(p, "bid_deadline", None)
+                if bid_dl:
+                    bid_deadline_str = bid_dl.strftime("%Y-%m-%d %H:%M")
+                else:
+                    bid_deadline_str = doc_deadline_str
+
+                summary_text = p.summary or ""
+                if p.analysis and isinstance(p.analysis, dict):
+                    summary_text = p.analysis.get("summary", summary_text)
+                if len(summary_text) > 150:
+                    summary_text = summary_text[:150] + "..."
+
+                analysis = p.analysis if isinstance(p.analysis, dict) else {}
+                intelligence = analysis.get("opportunity_intelligence", {})
+                sales_strategy = intelligence.get("sales_strategy", {})
+                main_focus = sales_strategy.get("main_focus", "数据治理")
+                approach = sales_strategy.get("approach_type", "方案型")
+                cm = p.customer_maturity_score or intelligence.get("customer_maturity_score", 50)
+                ltv = p.long_term_value_score or intelligence.get("long_term_value_score", 50)
+                bp = p.bidding_probability_score or intelligence.get("bidding_probability_score", 50)
+
+                lines.append(f"{idx}、{p.title}")
+                lines.append(f"🏢 采购单位：{p.buyer or '未知'}")
+                lines.append(f"💰 预算金额：{budget_str}")
+                lines.append(f"📍 地区：{p.region or '未知'}")
+                lines.append(f"🏷️ 来源平台：{p.source or '未知'}")
+                lines.append(f"📅 发布日期：{date_str}")
+                lines.append(f"🏷️ 公告类型：{notice_type}")
+                lines.append(f"⏰ 标书获取截止：{doc_deadline_str}")
+                lines.append(f"⏰ 投标截止时间：{bid_deadline_str}")
+                lines.append("---")
+                lines.append(f"📊 商机评分：{p.score} 分 | 等级：{p.score_grade or 'N/A'}")
+                lines.append("🧠 商机 Intelligence 评估")
+                lines.append(f"👤 客户成熟度：{cm}/100")
+                lines.append(f"📈 长期价值：{ltv}/100")
+                lines.append(f"🎯 中标概率：{bp}/100")
+                lines.append("---")
+
+                reason_text = getattr(p, "_reason_text", "") or ""
+                if not reason_text:
+                    score_reason = p.score_reason or "{}"
+                    try:
+                        sr = json.loads(score_reason) if isinstance(score_reason, str) else score_reason
+                        reason_text = sr.get("reason", "")[:100]
+                    except (json.JSONDecodeError, AttributeError):
+                        reason_text = ""
+
+                lines.append(f"💡 评分理由：{reason_text or '暂无'}")
+                lines.append(f"🎯 主打方向：{main_focus}")
+                lines.append(f"🏗️ 销售方式：{approach}")
+                lines.append(f"📋 项目摘要：{summary_text or '暂无'}")
+                lines.append(f"🔗 [查看原文]({p.source_url})")
+                lines.append("")
+
+            # 最后一批添加统计信息
+            if is_last:
+                lines.append("---")
+                lines.append(f"*AI 自动生成 · 灵爪 Nova · {title}*")
+                lines.append(f"> 共 {total_projects} 条商机 | {summary}")
+
+            content = "\n".join(lines)
+            message = {
+                "msgtype": "markdown",
+                "markdown": {"content": content},
+            }
+
+            success = await self._send_wecom_webhook(message)
+            if not success:
+                all_success = False
+                logger.warning(
+                    f"[Notifier] 日报批次 {batch_idx+1}/{total_batches} 推送失败"
+                )
+            else:
+                logger.info(
+                    f"[Notifier] 日报批次 {batch_idx+1}/{total_batches} 推送成功"
+                )
+
+            # 批次间延迟，避免触发频率限制
+            if not is_last:
+                await asyncio.sleep(1)
+
+        return all_success

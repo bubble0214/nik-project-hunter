@@ -1,0 +1,7 @@
+debug/
+__pycache__/
+*.pyc
+.env
+logs/
+frontend/
+.vscode/

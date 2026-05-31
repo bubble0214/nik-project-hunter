@@ -1,0 +1,12 @@
+# .dockerignore — 排除不需要打包到镜像的文件
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+.env.example
+debug/
+logs/
+*.md
+.vscode/
+.idea/
