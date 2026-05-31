@@ -39,12 +39,13 @@ class CrawlerService:
     def __init__(self):
         self.browser = None
         self.context = None
+        self._playwright = None
 
     async def _ensure_browser(self):
         """确保浏览器实例已启动"""
         if self.browser is None:
-            playwright = await async_playwright().start()
-            self.browser = await playwright.chromium.launch(
+            self._playwright = await async_playwright().start()
+            self.browser = await self._playwright.chromium.launch(
                 headless=True,
                 args=[
                     "--no-sandbox",
@@ -250,11 +251,16 @@ class CrawlerService:
         return all_projects
 
     async def close(self):
-        """关闭浏览器"""
+        """关闭浏览器和 Playwright 进程"""
+        if self.context:
+            await self.context.close()
+            self.context = None
         if self.browser:
             await self.browser.close()
             self.browser = None
-            self.context = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
 
 
 # 全局单例

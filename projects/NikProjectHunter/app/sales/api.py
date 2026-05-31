@@ -153,7 +153,7 @@ async def sales_dashboard(
             )
             .limit(10)
         )
-        top_top_opps = top_result.scalars().all()
+        toptop_opps = top_result.scalars().all()
 
         # ------------------------------------------------------------------
         # 4. 长周期项目列表
@@ -212,7 +212,7 @@ async def sales_dashboard(
                 _enrich_with_project(o, projects) for o in week_opps
             ],
             "top_priority_customers": [
-                _enrich_with_company(o, companies) for o in _top_opps
+                _enrich_with_company(o, companies) for o in toptop_opps
             ],
             "long_term_projects": [
                 _enrich_with_project(o, projects) for o in long_term_opps
@@ -350,7 +350,7 @@ async def _generate_sales_summary(
             "请给出今日最应该做的事。"
         )
 
-        result = await ai_client.chat_completion(
+        result = await ai_client.chat(
             messages=[
                 {
                     "role": "system",

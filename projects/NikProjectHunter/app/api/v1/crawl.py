@@ -138,6 +138,13 @@ async def run_full_pipeline(
     # 1. 爬取
     logger.info("[Pipeline] Step 1/4: 爬取")
     crawl_status = await spider_manager.crawl_all(db)
+    if crawl_status.skipped:
+        logger.warning("[Pipeline] 爬取被跳过（上一轮还在运行），终止流水线")
+        elapsed = time.time() - start_time
+        return {
+            "message": "爬取被跳过，上一轮流水线仍在运行",
+            "stats": {"skipped": True, "elapsed_seconds": round(elapsed, 2)},
+        }
     stats["crawled"] = crawl_status.total_new
 
     # 2. AI 分析

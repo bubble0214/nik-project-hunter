@@ -52,6 +52,7 @@ class CrawlStatus:
         self.llm_filtered: int = 0
         self.semantic_filtered: int = 0  # 新增：语义过滤
         self.avg_quality_score: float = 0.0
+        self.skipped: bool = False
 
     def start(self):
         self.crawl_id = str(uuid.uuid4())[:8]
@@ -68,6 +69,7 @@ class CrawlStatus:
         self.llm_filtered = 0
         self.semantic_filtered = 0
         self.avg_quality_score = 0.0
+        self.skipped = False
 
     def complete(self):
         self.status = "completed"
@@ -99,6 +101,7 @@ class CrawlStatus:
             "avg_quality_score": round(self.avg_quality_score, 1),
             "spider_results": self.spider_results,
             "error": self.error,
+            "skipped": self.skipped,
         }
 
 
@@ -134,10 +137,11 @@ class SpiderManager:
             session: 数据库会话
 
         Returns:
-            爬取状态
+            爬取状态（status.skipped=True 表示未执行）
         """
         if self._crawl_lock.locked():
             logger.warning("[Manager] crawl_all already running, skipping")
+            self.status.skipped = True
             return self.status
         async with self._crawl_lock:
             self.status.start()
@@ -262,6 +266,7 @@ class SpiderManager:
         """运行所有 Spider 的采购意向爬取 — 直接存入 ProcurementIntention 表"""
         if self._intent_lock.locked():
             logger.warning("[Manager] crawl_all_intents already running, skipping")
+            self.status.skipped = True
             return self.status
         async with self._intent_lock:
             self.status.start()
@@ -367,6 +372,7 @@ class SpiderManager:
 
     async def close_all(self):
         """关闭所有 Spider 的浏览器和 HTTP 客户端"""
+        # 关闭主爬虫
         for spider in self.spiders:
             try:
                 await spider.close_browser()
@@ -377,8 +383,16 @@ class SpiderManager:
                     await spider._http_client.aclose()
                 except Exception:
                     pass
-        logger.info("All Spider browsers and HTTP clients closed")
 
+        # 关闭采购意向爬虫的 HTTP 客户端
+        for spider in self.intention_spiders:
+            if hasattr(spider, '_http_client') and spider._http_client is not None:
+                try:
+                    await spider._http_client.aclose()
+                except Exception:
+                    pass
+
+        logger.info("All Spider browsers and HTTP clients closed")
 
 # 全局单例
 spider_manager = SpiderManager()

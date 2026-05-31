@@ -83,6 +83,8 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app/app
     environment:
       # --- 数据库 ---
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nik}:${POSTGRES_PASSWORD:-nik_secret_2026}@postgres:5432/${POSTGRES_DB:-nik_project_hunter}
