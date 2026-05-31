@@ -92,7 +92,6 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
     min_delay = 10.0
     max_delay = 25.0
     max_retries = 5
-    debug_mode = True
 
     # 指数退避配置
     _backoff_base = 5.0       # 初始等待秒数
@@ -261,16 +260,13 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
         return projects
 
     async def parse_detail_page(self, page: Page) -> dict:
-        """解析详情页"""
+        """解析详情页（增强版：多选择器回退链 + 全文提取）"""
         result = {
             "title": "", "source_url": page.url,
             "publish_date": None, "region": None,
             "buyer": None, "budget": None,
             "content": None, "raw_html": None,
         }
-
-        if self.debug_mode:
-            await save_page_snapshot(page, self.name, label="detail")
 
         # 检测反爬页面
         try:
@@ -288,101 +284,139 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
         except Exception:
             pass
 
-        # 提取标题
+        # 获取全文 innerText（千里马大部分信息在 body 文本中）
+        full_text = ""
         try:
-            te = await page.query_selector("h1")
-            if te:
-                result["title"] = (await te.inner_text()).strip()
+            full_text = await page.evaluate("document.body?.innerText || ''")
         except Exception:
             pass
 
-        # 提取详情信息
-        try:
-            detail_els = await page.query_selector_all("[class*=detail]")
-            detail_text = ""
-            for de in detail_els:
+        # 提取标题 — 多选择器回退链
+        title_selectors = ["h1", ".detail-title", ".title", "[class*=title] h1", "h2", ".biaoti"]
+        for sel in title_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el:
+                    t = (await el.inner_text()).strip()
+                    if len(t) > 5:
+                        result["title"] = t
+                        break
+            except Exception:
+                continue
+
+        # 从全文提取 buyer / region / budget / date
+        if full_text:
+            # 招标单位
+            bm = re.search(r"(?:招标单位|采购单位|采购人|招标人)[：:]\s*([^\s，,。.\n\r]{2,40})", full_text)
+            if bm:
+                result["buyer"] = bm.group(1).strip()
+
+            # 地区
+            rm = re.search(r"([\u4e00-\u9fff]{2,4}(?:省|市|区|县))", full_text)
+            if rm:
+                result["region"] = rm.group(1)
+
+            # 预算
+            bm2 = re.search(r"(?:预算|招标估价|采购预算|项目预算)[：:]\s*([\d,]+(?:[万万元亿]?\.\d*)?)", full_text)
+            if bm2:
                 try:
-                    detail_text += (await de.inner_text()) + "\n"
-                except Exception:
+                    raw = bm2.group(1).strip()
+                    if "亿" in raw:
+                        result["budget"] = float(raw.replace("亿", "").replace(",", "")) * 100_000_000
+                    elif "万" in raw:
+                        result["budget"] = float(raw.replace("万", "").replace(",", "")) * 10000
+                    else:
+                        result["budget"] = float(raw.replace(",", ""))
+                except ValueError:
                     pass
-            if detail_text:
-                rm = re.search(r"([\u4e00-\u9fff]{2,4}(?:省|市|区|县))", detail_text)
-                if rm:
-                    result["region"] = rm.group(1)
-                bm = re.search(r"招标单位[：:]\s*([^\s，,。.\n]{2,30})", detail_text)
-                if bm:
-                    result["buyer"] = bm.group(1).strip()
-                bm2 = re.search(r"招标估价[：:]\s*([\d,]+(?:\.\d+)?)", detail_text)
-                if bm2:
-                    try:
-                        result["budget"] = float(bm2.group(1).replace(",", ""))
-                    except ValueError:
-                        pass
-                tm = re.search(r"发布时间[：:]\s*(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", detail_text)
-                if tm:
-                    try:
-                        result["publish_date"] = datetime.datetime(int(tm.group(1)), int(tm.group(2)), int(tm.group(3)))
-                    except ValueError:
-                        pass
-        except Exception as e:
-            logger.debug(f"[{self.name}] 详情提取: {e}")
 
-        # 提取正文
-        try:
-            ce = await page.query_selector("[class*=content], .article, #content")
-            if ce:
-                result["content"] = await ce.inner_text()
-                result["raw_html"] = await ce.inner_html()
-        except Exception:
-            pass
+            # 发布时间
+            tm = re.search(r"(?:发布时间|发布日期|公告日期)[：:]\s*(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", full_text)
+            if tm:
+                try:
+                    result["publish_date"] = datetime.datetime(int(tm.group(1)), int(tm.group(2)), int(tm.group(3)))
+                except ValueError:
+                    pass
 
-        # 后备日期
-        if not result.get("publish_date") and result.get("content"):
-            m = re.search(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", result["content"])
+        # 提取正文 — 多选择器回退
+        content_selectors = [
+            "[class*=content]", ".article", "#content",
+            ".detail-content", ".detailCon", ".maintext",
+            "article", "[class*=text]",
+        ]
+        for sel in content_selectors:
+            try:
+                ce = await page.query_selector(sel)
+                if ce:
+                    text = await ce.inner_text()
+                    if len(text) > 100:
+                        result["content"] = text
+                        try:
+                            result["raw_html"] = await ce.inner_html()
+                        except Exception:
+                            pass
+                        break
+            except Exception:
+                continue
+
+        # 后备：如果正文提取失败，用全文作为 content（千里马详情页没有明确的 content 容器）
+        if not result["content"] and full_text and len(full_text) > 200:
+            result["content"] = full_text[:10000]
+
+        # 后备日期（从全文或 content 中）
+        if not result.get("publish_date"):
+            source = result.get("content") or full_text
+            m = re.search(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})", source)
             if m:
                 try:
                     result["publish_date"] = datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
                 except ValueError:
                     pass
 
-        # 后备标题
-        if not result["title"]:
-            try:
-                te = await page.query_selector("[class*=detail] h1, [class*=title]")
-                if te:
-                    result["title"] = (await te.inner_text()).strip()
-            except Exception:
-                pass
+        # 后备标题（从全文提取第一行）
+        if not result["title"] and full_text:
+            lines = [l.strip() for l in full_text.split("\n") if l.strip() and len(l.strip()) > 8]
+            if lines:
+                result["title"] = lines[0]
 
         return result
 
     async def _warmup_waf(self, page: Page) -> bool:
-        """WAF 预热：先访问首页过 JS Challenge
+        """WAF 预热：多轮访问首页过 JS Challenge
         
-        首页会触发华为云 WAF 的 JS Challenge 验证。
-        验证通过后设置 cookie，同 context 后续页面可复用。
+        华为云 WAF 的 JS Challenge 首次访问不一定过，
+        尝试多次预热确保 cookie 设置成功。
         """
-        logger.info(f"[{self.name}] WAF 预热：访问首页...")
-        try:
-            await page.goto("https://www.qianlima.com", wait_until="load", timeout=60000)
-            # 等待 WAF JS Challenge 执行 + cookie 设置
-            await page.wait_for_timeout(8000)
-            if self.debug_mode:
-                await save_page_snapshot(page, self.name, label="warmup_home")
-            # 通过标题判断是否被拦截
+        urls = [
+            "https://www.qianlima.com",
+            "https://www.qianlima.com/zbgg/",
+        ]
+        for attempt in range(1, 4):
+            target = urls[attempt - 1] if attempt <= len(urls) else urls[-1]
+            logger.info(f"[{self.name}] WAF 预热 {attempt}/3：访问 {target}...")
             try:
-                title = await page.title()
-                if "Access Verification" in title or "验证" in title:
-                    logger.warning(f"[{self.name}] WAF 预热失败：首页被拦截 (title={title[:30]})")
-                    return False
-                logger.info(f"[{self.name}] WAF 预热成功 (title={title[:30]})")
-                return True
-            except Exception:
-                logger.info(f"[{self.name}] WAF 预热完成")
-                return True
-        except Exception as e:
-            logger.error(f"[{self.name}] WAF 预热异常: {e}")
-            return False
+                await page.goto(target, wait_until="load", timeout=90000)
+                # 等待 WAF JS Challenge 执行 + cookie 设置
+                await page.wait_for_timeout(10000)
+                # 通过标题判断是否被拦截
+                try:
+                    title = await page.title()
+                    if "Access Verification" in title or "验证" in title:
+                        logger.warning(f"[{self.name}] WAF 预热 {attempt}/3 被拦截")
+                        await asyncio.sleep(5.0)
+                        continue
+                    logger.info(f"[{self.name}] WAF 预热 {attempt}/3 成功 (title={title[:40]})")
+                    # 成功后额外等待确保 cookie 完全生效
+                    await page.wait_for_timeout(3000)
+                    return True
+                except Exception:
+                    logger.info(f"[{self.name}] WAF 预热 {attempt}/3 完成")
+                    return True
+            except Exception as e:
+                logger.error(f"[{self.name}] WAF 预热 {attempt}/3 异常: {e}")
+                await asyncio.sleep(5.0)
+        logger.warning(f"[{self.name}] WAF 预热 3 次均失败，尝试直接爬取")
+        return False
 
     async def crawl(self) -> list[dict]:
         """串行爬取 — WAF 预热后串行访问详情页，避免触发 WAF 限频"""
