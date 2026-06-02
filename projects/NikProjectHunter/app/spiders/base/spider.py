@@ -24,7 +24,21 @@ from playwright.async_api import (
     TimeoutError as PlaywrightTimeout,
 )
 
-from app.spiders.debug.debug_tools import save_page_snapshot, selector_test, page_info
+# Debug tools — optional, only used when debug_mode is enabled
+_debug_tools = None
+
+
+def _get_debug_tools():
+    """Lazily import debug tools to avoid crashes if module is absent."""
+    global _debug_tools
+    if _debug_tools is None:
+        try:
+            from app.spiders.debug import debug_tools
+            _debug_tools = debug_tools
+        except ImportError:
+            logger.warning("Debug tools module not found; debug_mode snapshots disabled")
+            _debug_tools = False
+    return _debug_tools if _debug_tools else None
 
 
 # =============================================================================
@@ -193,12 +207,14 @@ class SpiderBase(ABC):
 
                 # 调试：保存快照
                 if self.debug_mode:
-                    await save_page_snapshot(
-                        page, self.name, label=f"goto_{attempt}"
-                    )
-                    await page_info(
-                        page, self.name, label=f"goto_{attempt}"
-                    )
+                    tools = _get_debug_tools()
+                    if tools:
+                        await tools.save_page_snapshot(
+                            page, self.name, label=f"goto_{attempt}"
+                        )
+                        await tools.page_info(
+                            page, self.name, label=f"goto_{attempt}"
+                        )
 
                 return True
             except PlaywrightTimeout:
@@ -206,9 +222,11 @@ class SpiderBase(ABC):
                     f"[{self.name}] 第 {attempt}/{self.max_retries} 次超时: {url[:80]}"
                 )
                 if self.debug_mode:
-                    await save_page_snapshot(
-                        page, self.name, label=f"timeout_{attempt}"
-                    )
+                    tools = _get_debug_tools()
+                    if tools:
+                        await tools.save_page_snapshot(
+                            page, self.name, label=f"timeout_{attempt}"
+                        )
                 if attempt < self.max_retries:
                     await asyncio.sleep(self.retry_delay * attempt)
             except Exception as e:
@@ -216,9 +234,11 @@ class SpiderBase(ABC):
                     f"[{self.name}] 第 {attempt}/{self.max_retries} 次失败: {e}"
                 )
                 if self.debug_mode:
-                    await save_page_snapshot(
-                        page, self.name, label=f"error_{attempt}"
-                    )
+                    tools = _get_debug_tools()
+                    if tools:
+                        await tools.save_page_snapshot(
+                            page, self.name, label=f"error_{attempt}"
+                        )
                 if attempt < self.max_retries:
                     await asyncio.sleep(self.retry_delay * attempt)
         return False
@@ -307,35 +327,39 @@ class SpiderBase(ABC):
 
                 # 调试：页面诊断
                 if self.debug_mode:
-                    await page_info(
-                        page, self.name, label=f"list_page_{page_num}"
-                    )
+                    tools = _get_debug_tools()
+                    if tools:
+                        await tools.page_info(
+                            page, self.name, label=f"list_page_{page_num}"
+                        )
 
                 # 调试：测试常用 Selector
                 if self.debug_mode:
-                    common_selectors = [
-                        "a[href]",
-                        "a",
-                        "h1",
-                        "h2",
-                        "h3",
-                        ".title",
-                        ".list",
-                        "table",
-                        "tr",
-                        "td",
-                        "li",
-                        ".item",
-                        "[class*=list]",
-                        "[class*=item]",
-                        "[class*=title]",
-                    ]
-                    await selector_test(
-                        page,
-                        self.name,
-                        common_selectors,
-                        label=f"list_page_{page_num}",
-                    )
+                    tools = _get_debug_tools()
+                    if tools:
+                        common_selectors = [
+                            "a[href]",
+                            "a",
+                            "h1",
+                            "h2",
+                            "h3",
+                            ".title",
+                            ".list",
+                            "table",
+                            "tr",
+                            "td",
+                            "li",
+                            ".item",
+                            "[class*=list]",
+                            "[class*=item]",
+                            "[class*=title]",
+                        ]
+                        await tools.selector_test(
+                            page,
+                            self.name,
+                            common_selectors,
+                            label=f"list_page_{page_num}",
+                        )
 
                 # 解析列表页
                 projects_on_page = await self.parse_list_page(page)

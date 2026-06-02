@@ -76,7 +76,7 @@ class NotifierService:
             project._sales_strategy = {}
 
     def _should_notify(self, project: Project) -> bool:
-        # 现阶段：所有项目都推送通知
+        # TODO: 目前推送所有项目，后续应根据评分/级别过滤
         return True
 
     def _get_notification_level(self, project: Project) -> list[str]:

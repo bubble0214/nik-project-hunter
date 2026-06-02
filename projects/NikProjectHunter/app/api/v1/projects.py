@@ -49,7 +49,9 @@ async def list_projects(
     if source:
         query = query.where(Project.source == source)
     if keyword:
-        query = query.where(Project.title.ilike(f"%{keyword}%"))
+        # Escape LIKE wildcards to prevent wildcard injection
+        escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(Project.title.ilike(f"%{escaped}%", escape="\\"))
 
     # 按创建时间倒序
     query = query.order_by(desc(Project.created_at))

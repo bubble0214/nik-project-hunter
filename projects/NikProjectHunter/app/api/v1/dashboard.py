@@ -21,6 +21,7 @@ from loguru import logger
 from sqlalchemy import func, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 
 from app.database import get_db as get_session
 from app.models import Project
@@ -145,7 +146,7 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
 
     except Exception as e:
         logger.error(f"[Dashboard] 统计查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @router.get("/intelligence")
@@ -386,7 +387,7 @@ async def get_intelligence(
 
     except Exception as e:
         logger.error(f"[Dashboard] Intelligence 查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @router.get("/observation")
@@ -432,7 +433,7 @@ async def get_observation(
 
     except Exception as e:
         logger.error(f"[Dashboard] Observation 查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @router.get("/spider-health")
@@ -466,7 +467,7 @@ async def get_spider_health(
 
     except Exception as e:
         logger.error(f"[Dashboard] Spider Health 查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @router.get("/observation/report")
@@ -495,7 +496,7 @@ async def get_observation_report(
 
     except Exception as e:
         logger.error(f"[Dashboard] Observation Report 查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @router.get("/intention")
@@ -531,4 +532,4 @@ async def get_intention_intelligence(
 
     except Exception as e:
         logger.error(f"[Dashboard] Intention Intelligence 查询异常: {e}")
-        return {"error": str(e)}
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})

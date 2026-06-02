@@ -49,7 +49,7 @@ class AIClient:
             模型输出文本
         """
         if not settings.LLM_API_KEY:
-            return json.dumps({"error": "LLM_API_KEY not configured"})
+            raise ValueError("LLM_API_KEY is not configured. Set it via environment variable or .env file.")
 
         try:
             kwargs = {

@@ -22,7 +22,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Playwright 需要 Chromium 浏览器及其依赖
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Playwright 系统依赖
     libnss3 \
     libnspr4 \
     libatk1.0-0t64 \
@@ -38,12 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libasound2t64 \
     libxfixes3 \
-    # 通用工具
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Python 依赖
+# Python 依赖（利用 Docker 层缓存：先复制 requirements.txt）
 # ---------------------------------------------------------------------------
 COPY requirements.txt .
 RUN pip install -r requirements.txt
@@ -52,14 +50,22 @@ RUN pip install -r requirements.txt
 RUN playwright install chromium
 
 # ---------------------------------------------------------------------------
+# 创建非 root 用户运行应用
+# ---------------------------------------------------------------------------
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+
+# ---------------------------------------------------------------------------
 # 应用代码
 # ---------------------------------------------------------------------------
 COPY . .
 
+# 创建日志目录并设置权限
+RUN mkdir -p logs && chown -R appuser:appuser /app
+
+USER appuser
+
 # ---------------------------------------------------------------------------
 # 启动
-# 开发环境使用 --reload（已通过 docker-compose command 覆盖）
-# 生产环境移除 --reload
 # ---------------------------------------------------------------------------
 EXPOSE 8000
 

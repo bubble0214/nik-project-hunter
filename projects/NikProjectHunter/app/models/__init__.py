@@ -131,7 +131,7 @@ class Project(Base):
 
     @property
     def is_high_value(self) -> bool:
-        """是否高价值项目（现阶段：所有项目都是高价值）"""
+        """是否高价值项目（TODO: 目前默认所有项目为高价值，后续应根据评分/级别过滤）"""
         return True
 
     @property

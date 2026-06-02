@@ -11,8 +11,6 @@ version: "3.9"
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL + pgvector
-  # 用途：主数据库，存储项目、分析结果、未来 RAG 向量
-  # 扩展：未来多租户只需增加 tenant_id 字段
   # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg17
@@ -23,7 +21,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nik_project_hunter}
       POSTGRES_USER: ${POSTGRES_USER:-nik}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nik_secret_2026}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,8 +32,6 @@ services:
 
   # ---------------------------------------------------------------------------
   # Redis
-  # 用途：缓存、任务队列（Celery/APScheduler）、速率限制
-  # 扩展：未来作为 Agent 消息总线、会话存储
   # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -45,6 +41,7 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -52,8 +49,7 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # pgAdmin（数据库管理界面）
-  # 用途：开发调试用，非生产环境
+  # pgAdmin（仅开发环境使用）
   # ---------------------------------------------------------------------------
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -63,17 +59,17 @@ services:
       - "${PGADMIN_PORT:-5050}:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-nik@hoyin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin_2026}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD is required}
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
       postgres:
         condition: service_healthy
+    profiles:
+      - dev
 
   # ---------------------------------------------------------------------------
   # FastAPI 应用服务
-  # 用途：核心后端，包含 API、爬虫调度、AI 分析引擎
-  # 扩展：未来可水平扩展为多个 worker 实例
   # ---------------------------------------------------------------------------
   app:
     build:
@@ -86,27 +82,22 @@ services:
     volumes:
       - ./app:/app/app
     environment:
-      # --- 数据库 ---
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nik}:${POSTGRES_PASSWORD:-nik_secret_2026}@postgres:5432/${POSTGRES_DB:-nik_project_hunter}
-      # --- Redis ---
-      REDIS_URL: redis://redis:6379/0
-      # --- LLM API（默认 DeepSeek，可替换为 OpenAI / Claude） ---
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nik}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nik_project_hunter}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.deepseek.com}
       LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
-      # --- 通知（可选） ---
       WECHAT_WEBHOOK_URL: ${WECHAT_WEBHOOK_URL:-}
-      # --- 爬虫配置 ---
+      API_KEY: ${API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       CRAWL_INTERVAL_MINUTES: ${CRAWL_INTERVAL_MINUTES:-60}
-      # --- 应用日志级别 ---
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_DIR: ${LOG_DIR:-logs}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: >
-      sh -c "pip install beautifulsoup4 && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 # =============================================================================
 # 持久化卷

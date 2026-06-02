@@ -7,9 +7,11 @@ Nik Project Hunter — 定时任务配置（第三阶段升级）
 3. 与 FastAPI 生命周期集成
 """
 
+import asyncio
+from datetime import datetime, timezone, timedelta
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 from sqlalchemy import select
 
@@ -151,7 +153,6 @@ class CrawlScheduler:
         logger.info("[Scheduler] 每日商机日报开始生成")
         async with async_session_factory() as session:
             try:
-                from datetime import datetime, timezone, timedelta
                 now = datetime.now(timezone(timedelta(hours=8)))
                 yesterday = now - timedelta(days=1)
 
@@ -208,8 +209,6 @@ class CrawlScheduler:
             self.scheduler.shutdown(wait=False)
 
         # 创建新实例，显式绑定当前 event loop
-        import asyncio
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

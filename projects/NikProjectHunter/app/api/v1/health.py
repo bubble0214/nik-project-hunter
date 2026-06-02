@@ -70,7 +70,7 @@ async def _check_postgres() -> dict:
             return {"status": "degraded", "message": "数据库返回异常"}
     except Exception as e:
         logger.error(f"PostgreSQL 检查失败: {e}")
-        return {"status": "unhealthy", "message": f"PostgreSQL 连接失败: {str(e)[:100]}"}
+        return {"status": "unhealthy", "message": "PostgreSQL 连接失败"}
 
 
 async def _check_redis() -> dict:
@@ -87,7 +87,7 @@ async def _check_redis() -> dict:
         return {"status": "warning", "message": "redis-py 未安装"}
     except Exception as e:
         logger.error(f"Redis 检查失败: {e}")
-        return {"status": "unhealthy", "message": f"Redis 连接失败: {str(e)[:100]}"}
+        return {"status": "unhealthy", "message": "Redis 连接失败"}
 
 
 async def _check_llm() -> dict:
@@ -111,7 +111,7 @@ async def _check_llm() -> dict:
         return {"status": "degraded", "message": "LLM 返回为空"}
     except Exception as e:
         logger.error(f"LLM 检查失败: {e}")
-        return {"status": "unhealthy", "message": f"LLM API 连接失败: {str(e)[:100]}"}
+        return {"status": "unhealthy", "message": "LLM API 连接失败"}
 
 
 def _check_spider() -> dict:

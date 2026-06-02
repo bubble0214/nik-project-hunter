@@ -15,6 +15,12 @@ from app.config import get_settings
 
 settings = get_settings()
 
+if not settings.DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL is required. Set it via environment variable or .env file. "
+        "Example: DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname"
+    )
+
 # ------------------------------------------------------------------
 # 异步引擎
 # ------------------------------------------------------------------
@@ -22,7 +28,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,        # 调试模式下打印 SQL
     pool_size=10,               # 连接池大小
-    max_overflow=20,            # 最大溢出连接数
+    max_overflow=20,             # 最大溢出连接数
     pool_pre_ping=True,         # 连接前检查健康状态
 )
 

@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.spiders.china_zfcg import ChinaZFCGSpider
@@ -21,8 +22,6 @@ from app.spiders.jincaiwang import JinCaiWangSpider
 from app.spiders.beijing_ggzy import QianLiMaSpider
 from app.pipeline.pipeline import Pipeline
 from app.pipeline.quality_pipeline import QualityPipeline
-
-from datetime import datetime
 from app.spiders.tianjin_zfcg import TianjinZFCGSpider
 from app.spiders.hebei_zfcg import HebeiZFCGSpider
 from app.spiders.intention_spiders import INTENTION_SPIDERS
@@ -298,7 +297,6 @@ class SpiderManager:
                         new_count = 0
                         for item in raw_intents:
                             try:
-                                from sqlalchemy import select
                                 result = await session.execute(
                                     select(ProcurementIntention).where(
                                         ProcurementIntention.source_url == item.get("source_url", "")

@@ -24,6 +24,7 @@ from loguru import logger
 from app.config import get_settings
 from app.database import init_db, close_db
 from app.core.logging_config import setup_logging
+from app.api.auth import APIKeyMiddleware
 from app.api.v1 import projects, crawl
 from app.api.v1.health import router as health_router
 from app.api.v1.dashboard import router as dashboard_router
@@ -84,12 +85,20 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------------
-# CORS 配置（允许前端开发环境访问）
+# API Key 认证中间件（在所有 /api/v1/* 端点上强制认证）
 # ------------------------------------------------------------------
+app.add_middleware(APIKeyMiddleware)
+
+# ------------------------------------------------------------------
+# CORS 配置
+# 生产环境应通过 CORS_ORIGINS 环境变量设置具体域名
+# ------------------------------------------------------------------
+cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else ["*"]
+allow_credentials = len(cors_origins) == 1 and cors_origins[0] != "*"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 开发阶段允许所有来源
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
