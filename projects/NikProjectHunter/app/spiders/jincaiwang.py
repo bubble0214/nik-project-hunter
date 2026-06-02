@@ -29,7 +29,18 @@ from loguru import logger
 from playwright.async_api import Page
 
 from app.spiders.base.spider import SpiderBase
-from app.spiders.debug.debug_tools import save_page_snapshot
+
+
+def _get_debug_tools():
+    """懒加载调试工具（模块可能不存在）"""
+    try:
+        from app.spiders.debug.debug_tools import save_page_snapshot
+        return save_page_snapshot
+    except ImportError:
+        return None
+
+
+save_page_snapshot = _get_debug_tools()
 
 
 class JinCaiWangSpider(SpiderBase):
@@ -107,7 +118,7 @@ class JinCaiWangSpider(SpiderBase):
                 except Exception:
                     pass
 
-            if self.debug_mode:
+            if self.debug_mode and save_page_snapshot:
                 await save_page_snapshot(page, self.name, label="home_page")
 
             try:
@@ -196,7 +207,7 @@ class JinCaiWangSpider(SpiderBase):
             "content": None, "raw_html": None,
         }
 
-        if self.debug_mode:
+        if self.debug_mode and save_page_snapshot:
             await save_page_snapshot(page, self.name, label="detail")
 
         try:

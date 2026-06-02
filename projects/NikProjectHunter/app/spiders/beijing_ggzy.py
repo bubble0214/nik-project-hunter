@@ -25,7 +25,18 @@ from loguru import logger
 from playwright.async_api import Page, BrowserContext
 
 from app.spiders.base.spider import SpiderBase
-from app.spiders.debug.debug_tools import save_page_snapshot, page_info
+
+
+def _get_debug_tools():
+    """懒加载调试工具（模块可能不存在）"""
+    try:
+        from app.spiders.debug.debug_tools import save_page_snapshot, page_info
+        return save_page_snapshot, page_info
+    except ImportError:
+        return None, None
+
+
+save_page_snapshot, page_info = _get_debug_tools()
 
 
 # =============================================================================
@@ -153,7 +164,7 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
 
     async def safe_goto(self, page: Page, url: str, preserve_referer: bool = False) -> bool:
         """反爬增强的安全导航
-        
+
         Args:
             preserve_referer: 是否保留当前页面的 Referer（用于详情页跳转，避免 WAF 检测）
         """
@@ -174,7 +185,7 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
                     pt = await page.title()
                     if any(k in pt for k in ["Access Verification", "验证", "拦截"]):
                         logger.warning(f"[{self.name}] WAF 拦截 (第{attempt}次), 等待后重试: {url[-50:]}")
-                        if self.debug_mode:
+                        if self.debug_mode and save_page_snapshot:
                             await save_page_snapshot(page, self.name, label=f"waf_block_{attempt}")
                         if attempt < self.max_retries:
                             wait = exponential_backoff(attempt)
@@ -183,12 +194,12 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
                         return False
                 except Exception:
                     pass
-                if self.debug_mode:
+                if self.debug_mode and save_page_snapshot:
                     await save_page_snapshot(page, self.name, label=f"goto_{attempt}")
                 return True
             except Exception as e:
                 logger.warning(f"[{self.name}] 第 {attempt}/{self.max_retries} 次失败: {type(e).__name__} -> {url[-50:]}")
-                if self.debug_mode:
+                if self.debug_mode and save_page_snapshot:
                     await save_page_snapshot(page, self.name, label=f"error_{attempt}")
                 if attempt < self.max_retries:
                     wait = exponential_backoff(attempt)
@@ -200,7 +211,7 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
         """解析招标公告列表页"""
         projects = []
 
-        if self.debug_mode:
+        if self.debug_mode and save_page_snapshot:
             await save_page_snapshot(page, self.name, label="list_page")
 
         try:
@@ -440,15 +451,19 @@ class QianLiMaSpider(SpiderBase, AntiBotMixin):
                     logger.warning(f"[{self.name}] 第 {page_num} 页访问失败，跳过")
                     continue
 
-                if self.debug_mode:
+                if self.debug_mode and page_info:
                     await page_info(page, self.name, label=f"list_page_{page_num}")
+                if self.debug_mode:
                     common_selectors = [
                         "a[href]", "a", "h1", "h2", "h3",
                         ".title", ".list", "table", "tr", "td",
                         "li", ".item", "[class*=list]", "[class*=item]", "[class*=title]",
                     ]
-                    from app.spiders.debug.debug_tools import selector_test
-                    await selector_test(page, self.name, common_selectors, label=f"list_page_{page_num}")
+                    try:
+                        from app.spiders.debug.debug_tools import selector_test
+                        await selector_test(page, self.name, common_selectors, label=f"list_page_{page_num}")
+                    except ImportError:
+                        pass
 
                 projects_on_page = await self.parse_list_page(page)
                 if not projects_on_page:
